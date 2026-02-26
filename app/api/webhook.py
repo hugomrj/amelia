@@ -21,26 +21,37 @@ async def send_to_wuzapi(chat_id: str, text: str):
         except Exception as e:
             print(f"!! Error enviando a Wuzapi: {e}")
 
+
+
+
 @router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
     try:
-        data = await request.json()
+        # 1. Validar que el body no venga vacío (evita el error line 1 column 1)
+        body = await request.body()
+        if not body:
+            return JSONResponse({"status": "ignored_empty_body"})
+            
+        data_json = await request.json()
         
-        # Extraer datos según estructura típica de Wuzapi
-        sender = data.get("chatId") or data.get("from")
-        message = data.get("text") or data.get("body")
+        # 2. Wuzapi 3.0 mete la info dentro de la llave 'data'
+        # Si 'data' no existe, usamos el dict principal por si acaso
+        inner_data = data_json.get("data", data_json)
+        
+        # 3. Extraer remitente y mensaje con los nombres de campo de Wuzapi 3
+        sender = inner_data.get("from") or inner_data.get("chatId")
+        message = inner_data.get("body") or inner_data.get("text")
         
         print(f"\n--- 🟢 WUZAPI IN ---")
         print(f"-> FROM: {sender}")
         print(f"-> MSG:  '{message}'")
 
         if not message:
-            return JSONResponse({"status": "empty_ignored"})
+            return JSONResponse({"status": "event_received_no_text"})
 
-        # RESPUESTA CERRADA (Prueba de conexión)
-        reply_text = "Hola, soy Amelia. Recibí tu mensaje correctamente. Próximamente estaré conectada a mi cerebro de IA."
+        # RESPUESTA CERRADA
+        reply_text = "Hola, soy Amelia. Recibí tu mensaje correctamente."
         
-        # Enviamos la respuesta asíncrona para no bloquear el webhook
         import asyncio
         asyncio.create_task(send_to_wuzapi(sender, reply_text))
 
@@ -50,5 +61,6 @@ async def whatsapp_endpoint(request: Request):
         return JSONResponse({"status": "success"})
 
     except Exception as e:
+        # Esto atrapará el error de "Expecting value" y te dirá qué pasó
         print(f"!! ERR WEBHOOK: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"error": "check_logs"}, status_code=200) # Devolvemos 200 para que Wuzapi no reintente eternamente
