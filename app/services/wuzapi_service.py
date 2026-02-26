@@ -4,7 +4,7 @@ import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 # Importamos el servicio que crearemos a continuación
-from app.services.ia_services import get_amelia_response
+from app.services.ia_service import get_amelia_response
 
 router = APIRouter()
 
