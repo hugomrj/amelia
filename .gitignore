@@ -1,0 +1,24 @@
+# Entornos virtuales
+venv/
+env/
+.env
+
+# Python (Archivos temporales)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+
+# Base de Datos (Si tienes un archivo sqlite local)
+*.db
+*.sqlite3
+
+# IA (No subir modelos pesados a GitHub)
+models/
+*.gguf
+
+# VS Code / IDEs
+.vscode/
+.idea/
