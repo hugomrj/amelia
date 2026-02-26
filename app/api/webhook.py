@@ -1,12 +1,14 @@
 import httpx
+import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
-# Configuración de salida para Wuzapi
-# Cambia localhost por la IP de tu server si Wuzapi está en otro contenedor/maquina
-WUZAPI_SEND_URL = "http://localhost:8080/api/sendText" 
+# --- CONFIGURACIÓN ACTUALIZADA ---
+# Usamos el puerto 9010 y la IP de la puerta de enlace de Docker
+WUZAPI_SEND_URL = "http://172.17.0.1:9010/api/sendText" 
+WUZAPI_TOKEN = "token**" # Asegúrate de que este sea tu token real
 
 async def send_to_wuzapi(chat_id: str, text: str):
     """Envía el mensaje de vuelta a Wuzapi"""
@@ -14,52 +16,48 @@ async def send_to_wuzapi(chat_id: str, text: str):
         "chatId": chat_id,
         "text": text
     }
+    # En Wuzapi 3.0, el header suele ser 'Token'
+    headers = {"Token": WUZAPI_TOKEN}
+    
     async with httpx.AsyncClient() as client:
         try:
-            # Enviamos la respuesta a Wuzapi
-            await client.post(WUZAPI_SEND_URL, json=payload)
+            # Aumentamos el timeout a 10 segundos por si el contenedor tarda en despertar
+            response = await client.post(WUZAPI_SEND_URL, json=payload, headers=headers, timeout=10.0)
+            print(f"<- WUZAPI RESPONSE: {response.status_code} | {response.text}", flush=True)
         except Exception as e:
-            print(f"!! Error enviando a Wuzapi: {e}")
+            print(f"!! Error enviando a Wuzapi en puerto 9010: {e}", flush=True)
 
 @router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
     try:
-        # En FastAPI, es mejor obtener el JSON directamente con un try/except
         try:
             data = await request.json()
         except Exception:
-            # Si falla el JSON (cuerpo vacío o mal formado), salimos sin error 500
             return JSONResponse({"status": "ignored_non_json"}, status_code=200)
 
-        # Usamos la misma lógica de extracción de tu código de Starlette
-        # Pero añadimos .get() para que no explote si la llave no existe
-        
-        # Wuzapi 3 suele envolver en 'data', probamos ambas:
         inner_data = data.get("data", data)
         
-        # Mapeo de campos que te funcionó (message y sender)
+        # Mapeo de campos
         message = inner_data.get("message") or inner_data.get("body") or inner_data.get("text")
         sender = inner_data.get("sender") or inner_data.get("from") or inner_data.get("chatId")
 
-        print(f"\n--- 🟢 WHATSAPP IN ---")
-        print(f"-> FROM: {sender}")
-        print(f"-> MSG:  '{message}'")
-
         if not message:
-            return JSONResponse({"status": "empty_msg_ignored"}, status_code=200)
+            return JSONResponse({"status": "event_ignored"}, status_code=200)
 
-        # Lógica de respuesta de Amelia
-        reply_text = "Hola, soy Amelia. ¡Conexión establecida con FastAPI!"
+        print(f"\n--- 🟢 WHATSAPP IN ---", flush=True)
+        print(f"-> DE: {sender}", flush=True)
+        print(f"-> MSG: '{message}'", flush=True)
+
+        reply_text = "Hola, soy Amelia. ¡Te escucho en el puerto 9010!"
         
-        import asyncio
+        # Ejecución asíncrona para no bloquear el recibo del webhook
         asyncio.create_task(send_to_wuzapi(sender, reply_text))
 
-        print(f"<- AMELIA: {reply_text}")
-        print(f"----------------------")
+        print(f"<- AMELIA: {reply_text}", flush=True)
+        print(f"----------------------\n", flush=True)
         
         return JSONResponse({"status": "success"})
 
     except Exception as e:
-        # Esto atrapará cualquier error y lo imprimirá para que lo veamos
-        print(f"!! ERR WHATSAPP: {e}")
-        return JSONResponse({"error": str(e)}, status_code=200) 
+        print(f"❌ ERROR EN WEBHOOK: {e}", flush=True)
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=200)
