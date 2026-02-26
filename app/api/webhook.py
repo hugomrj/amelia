@@ -1,76 +1,49 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 import httpx
 import asyncio
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
 
-router = APIRouter()
+app = FastAPI()
 
-# --- CONFIGURACIÓN SEGÚN TU CURL ---
+# --- REPETIMOS LA CONFIGURACIÓN AQUÍ PARA NO FALLAR ---
 WUZAPI_SEND_URL = "http://localhost:9010/chat/send/text" 
 WUZAPI_TOKEN = "token**" 
 
 async def send_to_wuzapi(phone: str, text: str):
-    """Envía el mensaje de vuelta a Wuzapi con el formato Phone/Body"""
-    if not phone:
-        return
-        
-    # Limpiamos el número (quitamos @s.whatsapp.net si existe)
-    clean_phone = phone.split('@')[0]
-    
-    payload = {
-        "Phone": clean_phone,
-        "Body": text
-    }
-    headers = {
-        "Token": WUZAPI_TOKEN,
-        "Content-Type": "application/json"
-    }
-    
+    clean_phone = phone.split('@')[0] if phone else ""
+    payload = {"Phone": clean_phone, "Body": text}
+    headers = {"Token": WUZAPI_TOKEN, "Content-Type": "application/json"}
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(WUZAPI_SEND_URL, json=payload, headers=headers, timeout=10.0)
-            print(f"<- WUZAPI SEND STATUS: {response.status_code}", flush=True)
+            r = await client.post(WUZAPI_SEND_URL, json=payload, headers=headers)
+            print(f"<- RESPUESTA WUZAPI: {r.status_code}", flush=True)
         except Exception as e:
-            print(f"!! Error enviando a Wuzapi: {e}", flush=True)
+            print(f"!! ERROR ENVIO: {e}", flush=True)
 
-@router.post("/whatsapp")
+@app.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
+    # LOG DE ENTRADA ABSOLUTO
+    print("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", flush=True)
+    print("!!! RECIBIENDO PETICION EN /WHATSAPP !!!", flush=True)
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", flush=True)
+    
     try:
-        # 1. Obtener JSON de forma segura
-        try:
-            data = await request.json()
-        except Exception:
-            return JSONResponse({"status": "no_json"}, status_code=200)
-
-        # 2. LOG DE DEBUG (Para ver la estructura real en el journalctl)
-        print(f"\n--- 📥 DATA RECIBIDA: {data}", flush=True)
-
-        # 3. Intentar extraer de 'data' o de la raíz
-        inner = data.get("data", data)
+        data = await request.json()
+        print(f"DEBUG DATA: {data}", flush=True)
         
-        # Mapeo agresivo de todas las llaves posibles
+        inner = data.get("data", data)
         message = inner.get("message") or inner.get("body") or inner.get("Body") or inner.get("text")
         sender = inner.get("sender") or inner.get("from") or inner.get("Phone") or inner.get("chatId")
 
-        if not message:
-            print("-> Evento sin mensaje (visto/presencia) ignorado.", flush=True)
-            return JSONResponse({"status": "no_message_content"}, status_code=200)
-
-        print(f"--- 🟢 WHATSAPP IN ---", flush=True)
-        print(f"-> DE: {sender}", flush=True)
-        print(f"-> MSG: '{message}'", flush=True)
-
-        # 4. Respuesta de Amelia
-        reply_text = "Hola, soy Amelia. Recibí tu mensaje y te respondo al puerto 9010."
+        if message:
+            print(f"-> MENSAJE: {message} | DE: {sender}", flush=True)
+            asyncio.create_task(send_to_wuzapi(sender, "¡Amelia en linea!"))
         
-        # Tarea asíncrona para enviar
-        asyncio.create_task(send_to_wuzapi(sender, reply_text))
-
-        print(f"<- AMELIA: Respuesta programada", flush=True)
-        print(f"----------------------\n", flush=True)
-        
-        return JSONResponse({"status": "success"})
-
+        return {"status": "ok"}
     except Exception as e:
-        print(f"❌ ERROR CRÍTICO: {e}", flush=True)
-        return JSONResponse({"status": "error"}, status_code=200)
+        print(f"❌ ERROR: {e}", flush=True)
+        return {"status": "error"}
+
+@app.get("/")
+def read_root():
+    return {"status": "running"}
