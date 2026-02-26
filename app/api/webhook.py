@@ -1,11 +1,10 @@
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Request # <--- Cambiado a APIRouter
 from fastapi.responses import JSONResponse
 import httpx
 import asyncio
 
-app = FastAPI()
+router = APIRouter() # <--- Esto es lo que main.py está buscando
 
-# --- REPETIMOS LA CONFIGURACIÓN AQUÍ PARA NO FALLAR ---
 WUZAPI_SEND_URL = "http://localhost:9010/chat/send/text" 
 WUZAPI_TOKEN = "token**" 
 
@@ -20,9 +19,8 @@ async def send_to_wuzapi(phone: str, text: str):
         except Exception as e:
             print(f"!! ERROR ENVIO: {e}", flush=True)
 
-@app.post("/whatsapp")
+@router.post("/whatsapp") # <--- Ahora usamos @router
 async def whatsapp_endpoint(request: Request):
-    # LOG DE ENTRADA ABSOLUTO
     print("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", flush=True)
     print("!!! RECIBIENDO PETICION EN /WHATSAPP !!!", flush=True)
     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", flush=True)
@@ -43,7 +41,3 @@ async def whatsapp_endpoint(request: Request):
     except Exception as e:
         print(f"❌ ERROR: {e}", flush=True)
         return {"status": "error"}
-
-@app.get("/")
-def read_root():
-    return {"status": "running"}
