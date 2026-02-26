@@ -23,34 +23,38 @@ async def send_to_wuzapi(chat_id: str, text: str):
 
 
 
-
 @router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
     try:
-        # 1. Validar que el body no venga vacío (evita el error line 1 column 1)
-        body = await request.body()
-        if not body:
-            return JSONResponse({"status": "ignored_empty_body"})
-            
-        data_json = await request.json()
+        # 1. Leer el cuerpo crudo primero
+        raw_body = await request.body()
         
-        # 2. Wuzapi 3.0 mete la info dentro de la llave 'data'
-        # Si 'data' no existe, usamos el dict principal por si acaso
+        # Si el cuerpo está vacío, salir sin error
+        if not raw_body:
+            return JSONResponse({"status": "ignored_empty_body"}, status_code=200)
+
+        # 2. Intentar parsear el JSON
+        try:
+            data_json = await request.json()
+        except Exception:
+            return JSONResponse({"status": "invalid_json_ignored"}, status_code=200)
+
+        # 3. Extraer datos (Wuzapi 3 suele usar la llave 'data')
         inner_data = data_json.get("data", data_json)
         
-        # 3. Extraer remitente y mensaje con los nombres de campo de Wuzapi 3
         sender = inner_data.get("from") or inner_data.get("chatId")
         message = inner_data.get("body") or inner_data.get("text")
         
+        # Si no hay mensaje (es un evento de 'visto' o 'presencia'), ignorar
+        if not message:
+            return JSONResponse({"status": "not_a_message_event"}, status_code=200)
+
         print(f"\n--- 🟢 WUZAPI IN ---")
         print(f"-> FROM: {sender}")
         print(f"-> MSG:  '{message}'")
 
-        if not message:
-            return JSONResponse({"status": "event_received_no_text"})
-
-        # RESPUESTA CERRADA
-        reply_text = "Hola, soy Amelia. Recibí tu mensaje correctamente."
+        # RESPUESTA DE PRUEBA
+        reply_text = "Hola, soy Amelia. ¡Conexión exitosa!"
         
         import asyncio
         asyncio.create_task(send_to_wuzapi(sender, reply_text))
@@ -61,6 +65,6 @@ async def whatsapp_endpoint(request: Request):
         return JSONResponse({"status": "success"})
 
     except Exception as e:
-        # Esto atrapará el error de "Expecting value" y te dirá qué pasó
+        # Ya no explotará con "Expecting value"
         print(f"!! ERR WEBHOOK: {e}")
-        return JSONResponse({"error": "check_logs"}, status_code=200) # Devolvemos 200 para que Wuzapi no reintente eternamente
+        return JSONResponse({"status": "error_handled"}, status_code=200)
