@@ -19,14 +19,27 @@ async def send_to_wuzapi(phone: str, text: str):
         except Exception as e:
             print(f"!! ERROR ENVIO: {e}", flush=True)
 
-@router.post("/whatsapp") # <--- Ahora usamos @router
+
+@router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
+    # 1. Verificamos si hay contenido antes de intentar leerlo
+    body = await request.body()
+    if not body:
+        return JSONResponse({"status": "ignored_empty_body"}, status_code=200)
+
     print("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", flush=True)
     print("!!! RECIBIENDO PETICION EN /WHATSAPP !!!", flush=True)
     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", flush=True)
     
     try:
-        data = await request.json()
+        # 2. Convertimos el body que ya leímos a JSON
+        import json
+        try:
+            data = json.loads(body)
+        except Exception:
+            print("-> Petición no es JSON válido, ignorando.", flush=True)
+            return JSONResponse({"status": "invalid_json"}, status_code=200)
+
         print(f"DEBUG DATA: {data}", flush=True)
         
         inner = data.get("data", data)
@@ -35,9 +48,12 @@ async def whatsapp_endpoint(request: Request):
 
         if message:
             print(f"-> MENSAJE: {message} | DE: {sender}", flush=True)
-            asyncio.create_task(send_to_wuzapi(sender, "¡Amelia en linea!"))
+            asyncio.create_task(send_to_wuzapi(sender, "¡Amelia en linea! Recibí tu mensaje."))
+        else:
+            print("-> Evento sin texto (visto/presencia) ignorado.", flush=True)
         
         return {"status": "ok"}
+
     except Exception as e:
-        print(f"❌ ERROR: {e}", flush=True)
-        return {"status": "error"}
+        print(f"❌ ERROR INTERNO: {e}", flush=True)
+        return JSONResponse({"status": "error_handled"}, status_code=200)
