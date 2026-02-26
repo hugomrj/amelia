@@ -21,38 +21,37 @@ async def send_to_wuzapi(chat_id: str, text: str):
         except Exception as e:
             print(f"!! Error enviando a Wuzapi: {e}")
 
-
 @router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
     try:
-        # 1. Protección contra cuerpos vacíos
-        raw_body = await request.body()
-        if not raw_body:
-            return JSONResponse({"status": "ignored_empty_body"}, status_code=200)
+        # En FastAPI, es mejor obtener el JSON directamente con un try/except
+        try:
+            data = await request.json()
+        except Exception:
+            # Si falla el JSON (cuerpo vacío o mal formado), salimos sin error 500
+            return JSONResponse({"status": "ignored_non_json"}, status_code=200)
 
-        # 2. Parsear JSON
-        data = await request.json()
+        # Usamos la misma lógica de extracción de tu código de Starlette
+        # Pero añadimos .get() para que no explote si la llave no existe
         
-        # 3. USAR LAS ETIQUETAS QUE TE FUNCIONAN EN EL OTRO SERVIDOR
-        # Si Wuzapi 3.0 los mete en 'data', lo extraemos, si no, del raíz
+        # Wuzapi 3 suele envolver en 'data', probamos ambas:
         inner_data = data.get("data", data)
         
-        message = inner_data.get("message") or inner_data.get("body")
-        sender = inner_data.get("sender") or inner_data.get("from")
-        
-        # Log para ver qué llega exactamente (Ayuda a depurar)
+        # Mapeo de campos que te funcionó (message y sender)
+        message = inner_data.get("message") or inner_data.get("body") or inner_data.get("text")
+        sender = inner_data.get("sender") or inner_data.get("from") or inner_data.get("chatId")
+
         print(f"\n--- 🟢 WHATSAPP IN ---")
         print(f"-> FROM: {sender}")
         print(f"-> MSG:  '{message}'")
 
         if not message:
-            return JSONResponse({"status": "empty_ignored"}, status_code=200)
+            return JSONResponse({"status": "empty_msg_ignored"}, status_code=200)
 
-        # 4. Lógica de respuesta (Prueba de conexión)
-        reply_text = "Hola, soy Amelia. Conexión establecida con éxito."
+        # Lógica de respuesta de Amelia
+        reply_text = "Hola, soy Amelia. ¡Conexión establecida con FastAPI!"
         
         import asyncio
-        # Asegúrate de que la función 'send_to_wuzapi' use el token correcto
         asyncio.create_task(send_to_wuzapi(sender, reply_text))
 
         print(f"<- AMELIA: {reply_text}")
@@ -61,5 +60,6 @@ async def whatsapp_endpoint(request: Request):
         return JSONResponse({"status": "success"})
 
     except Exception as e:
-        print(f"!! ERR WEBHOOK: {e}")
-        return JSONResponse({"error": str(e)}, status_code=200)
+        # Esto atrapará cualquier error y lo imprimirá para que lo veamos
+        print(f"!! ERR WHATSAPP: {e}")
+        return JSONResponse({"error": str(e)}, status_code=200) 
