@@ -22,7 +22,6 @@ async def send_to_wuzapi(phone: str, text: str):
 
 @router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
-    # 1. Verificamos si hay contenido antes de intentar leerlo
     body = await request.body()
     if not body:
         return JSONResponse({"status": "ignored_empty_body"}, status_code=200)
@@ -31,16 +30,15 @@ async def whatsapp_endpoint(request: Request):
     print("!!! RECIBIENDO PETICION EN /WHATSAPP !!!", flush=True)
     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", flush=True)
     
-    try:
-        # 2. Convertimos el body que ya leímos a JSON
-        import json
-        try:
-            data = json.loads(body)
-        except Exception:
-            print("-> Petición no es JSON válido, ignorando.", flush=True)
-            return JSONResponse({"status": "invalid_json"}, status_code=200)
+    # 1. Intentamos ver qué hay en el cuerpo (en texto plano)
+    raw_text = body.decode(errors='ignore')
+    print(f"CONTENIDO CRUDO RECIBIDO: {raw_text}", flush=True)
 
-        print(f"DEBUG DATA: {data}", flush=True)
+    try:
+        # 2. Intentamos JSON
+        import json
+        data = json.loads(body)
+        print(f"DEBUG JSON: {data}", flush=True)
         
         inner = data.get("data", data)
         message = inner.get("message") or inner.get("body") or inner.get("Body") or inner.get("text")
@@ -48,12 +46,17 @@ async def whatsapp_endpoint(request: Request):
 
         if message:
             print(f"-> MENSAJE: {message} | DE: {sender}", flush=True)
-            asyncio.create_task(send_to_wuzapi(sender, "¡Amelia en linea! Recibí tu mensaje."))
-        else:
-            print("-> Evento sin texto (visto/presencia) ignorado.", flush=True)
+            asyncio.create_task(send_to_wuzapi(sender, "¡Amelia en linea!"))
         
         return {"status": "ok"}
 
     except Exception as e:
-        print(f"❌ ERROR INTERNO: {e}", flush=True)
-        return JSONResponse({"status": "error_handled"}, status_code=200)
+        # 3. Si no es JSON, quizás es un formato de formulario
+        print(f"-> No es JSON. Intentando leer como formulario...", flush=True)
+        try:
+            form_data = await request.form()
+            if form_data:
+                print(f"DEBUG FORM: {dict(form_data)}", flush=True)
+        except:
+            pass
+        return JSONResponse({"status": "processed_as_raw"}, status_code=200)
