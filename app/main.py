@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.api.webhook import router as webhook_router
+from app.services.wuzapi_service import router as webhook_router
 
 app = FastAPI(title="Amelia API")
 
