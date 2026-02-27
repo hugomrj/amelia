@@ -42,6 +42,7 @@ async def procesar_con_ia_y_responder(sender: str, message: str):
     await send_to_wuzapi(sender, respuesta_ia)
     print(f"<- AMELIA RESPONDIÓ: {respuesta_ia}", flush=True)
 
+
 @router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
     try:
@@ -49,41 +50,35 @@ async def whatsapp_endpoint(request: Request):
         json_str = form_data.get("jsonData")
 
         if not json_str:
-            return JSONResponse({"status": "no_jsondata"}, status_code=200)
+            return JSONResponse({"status": "no_jsondata"})
 
         data = json.loads(json_str)
         event = data.get("event", {})
         info = event.get("Info", {})
         
-        # 1. Filtro IsFromMe
+        # 1. Filtro IsFromMe (Silencioso)
         if info.get("IsFromMe"):
             return JSONResponse({"status": "ignored_self"})
 
-        # 2. CAPTURA DE MENSAJE MEJORADA (Soporta conversación simple y texto extendido)
+        # 2. Captura de mensaje
         msg_obj = event.get("Message", {})
         message = (
             msg_obj.get("conversation") or 
             msg_obj.get("extendedTextMessage", {}).get("text")
         )
         
-        # 3. CAPTURA DE JID MEJORADA
         sender_jid = info.get("RemoteJid") or info.get("Sender")
         
+        # 3. SOLO imprimimos si hay un mensaje real de un cliente
         if message and sender_jid:
-            print("\n" + "="*40, flush=True)
-            print(f"!!! MENSAJE RECIBIDO DE: {sender_jid} !!!", flush=True)
-            print(f"-> MSG: {message}", flush=True)
-
-            asyncio.create_task(procesar_con_ia_y_responder(sender_jid, message))
+            print(f"\n[USER] {sender_jid}: {message}", flush=True)
             
-            print("<- PROCESO IA INICIADO", flush=True)
-            print("="*40 + "\n", flush=True)
-        else:
-            # Esto nos dirá en el log si recibimos un evento sin texto (como un check de lectura)
-            print(f"DEBUG: Evento ignorado (sin texto o sin JID). EventKeys: {msg_obj.keys()}", flush=True)
+            # Lanzamos la tarea y ella se encargará de imprimir su respuesta
+            asyncio.create_task(procesar_con_ia_y_responder(sender_jid, message))
         
         return JSONResponse({"status": "success"})
 
     except Exception as e:
-        print(f"❌ ERROR PROCESANDO: {e}", flush=True)
-        return JSONResponse({"status": "error"}, status_code=200)
+        # Los errores sí los queremos ver
+        print(f"❌ ERROR: {e}", flush=True)
+        return JSONResponse({"status": "error"})
