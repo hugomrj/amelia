@@ -3,26 +3,30 @@ import httpx
 import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-# Importamos el servicio que crearemos a continuación
 from app.services.ia_service import get_amelia_response
 
 router = APIRouter()
 
-WUZAPI_SEND_URL = "http://localhost:9010/chat/send/text" 
+# Cambiamos localhost por 127.0.0.1 para evitar problemas de resolución de nombres
+WUZAPI_SEND_URL = "http://127.0.0.1:9010/chat/send/text" 
 WUZAPI_TOKEN = "token**" 
 
 async def send_to_wuzapi(phone: str, text: str):
-    """Envía la respuesta final a WhatsApp"""
+    """Envía la respuesta final a WhatsApp usando el formato JID correcto"""
     if not phone: return
-    clean_phone = phone.split('@')[0].split(':')[0]
     
-    payload = {"Phone": clean_phone, "Body": text}
+    # Limpiamos el ID del dispositivo (:44) si existe y aseguramos el sufijo @s.whatsapp.net
+    clean_number = phone.split('@')[0].split(':')[0]
+    jid = f"{clean_number}@s.whatsapp.net"
+    
+    payload = {"Phone": jid, "Body": text}
     headers = {"Token": WUZAPI_TOKEN, "Content-Type": "application/json"}
     
     async with httpx.AsyncClient() as client:
         try:
             r = await client.post(WUZAPI_SEND_URL, json=payload, headers=headers)
-            print(f"<- RESPUESTA WUZAPI: {r.status_code}", flush=True)
+            # Imprimimos el r.text para ver errores de Wuzapi si llegara a fallar
+            print(f"<- RESPUESTA WUZAPI: {r.status_code} | {r.text}", flush=True)
         except Exception as e:
             print(f"!! ERROR ENVIO A WUZAPI: {e}", flush=True)
 
@@ -30,22 +34,13 @@ async def procesar_con_ia_y_responder(sender: str, message: str):
     """Tarea asíncrona: Pregunta a Llama y envía el resultado"""
     print(f"-> Amelia pensando respuesta para: {message}...", flush=True)
     
-    # Llamada al servicio de Llama.cpp (puerto 9020)
     respuesta_ia = await get_amelia_response(message)
     
-    # Enviar la respuesta generada a Wuzapi
     await send_to_wuzapi(sender, respuesta_ia)
     print(f"<- AMELIA RESPONDIÓ: {respuesta_ia}", flush=True)
 
 @router.post("/whatsapp")
 async def whatsapp_endpoint(request: Request):
-    body = await request.body()
-    if not body:
-        return JSONResponse({"status": "empty"}, status_code=200)
-
-    print("\n" + "="*40, flush=True)
-    print("!!! PROCESANDO MENSAJE WUZAPI !!!", flush=True)
-    
     try:
         form_data = await request.form()
         json_str = form_data.get("jsonData")
@@ -55,20 +50,30 @@ async def whatsapp_endpoint(request: Request):
 
         data = json.loads(json_str)
         event = data.get("event", {})
+        info = event.get("Info", {})
         
-        # Extraer Mensaje y Remitente
+        # --- FILTROS DE SEGURIDAD ---
+        # 1. Ignorar si el mensaje es enviado por nosotros (evita bucle infinito)
+        if info.get("IsFromMe"):
+            return JSONResponse({"status": "ignored_self"})
+
+        # 2. Extraer Mensaje (solo si es tipo conversación de texto)
         message = event.get("Message", {}).get("conversation")
-        sender_alt = event.get("Info", {}).get("SenderAlt", "")
         
-        if message and sender_alt:
-            print(f"-> DE: {sender_alt}", flush=True)
+        # 3. Usar RemoteJid para identificar al cliente
+        sender_jid = info.get("RemoteJid")
+        
+        if message and sender_jid:
+            print("\n" + "="*40, flush=True)
+            print(f"!!! MENSAJE RECIBIDO DE: {sender_jid} !!!", flush=True)
             print(f"-> MSG: {message}", flush=True)
 
             # Lanzamos el proceso de la IA en segundo plano
-            asyncio.create_task(procesar_con_ia_y_responder(sender_alt, message))
+            asyncio.create_task(procesar_con_ia_y_responder(sender_jid, message))
+            
             print("<- PROCESO IA INICIADO", flush=True)
+            print("="*40 + "\n", flush=True)
         
-        print("="*40 + "\n", flush=True)
         return JSONResponse({"status": "success"})
 
     except Exception as e:
