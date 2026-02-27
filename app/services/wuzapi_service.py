@@ -11,11 +11,16 @@ WUZAPI_SEND_URL = "http://127.0.0.1:9010/chat/send/text"
 WUZAPI_TOKEN = "token**" 
 
 async def send_to_wuzapi(phone: str, text: str):
+    """Envía la respuesta usando el JID exacto que recibimos"""
     if not phone: return
     
-    # Aseguramos el formato JID puro
-    clean_number = phone.split('@')[0].split(':')[0]
-    jid = f"{clean_number}@s.whatsapp.net"
+    # En lugar de forzar @s.whatsapp.net, solo quitamos el identificador de dispositivo (:44)
+    # pero mantenemos el dominio que venga (@lid, @s.whatsapp.net, @g.us, etc)
+    parts = phone.split('@')
+    number_part = parts[0].split(':')[0]
+    domain_part = parts[1] if len(parts) > 1 else "s.whatsapp.net"
+    
+    jid = f"{number_part}@{domain_part}"
     
     payload = {"Phone": jid, "Body": text}
     headers = {"Token": WUZAPI_TOKEN, "Content-Type": "application/json"}
@@ -23,9 +28,13 @@ async def send_to_wuzapi(phone: str, text: str):
     async with httpx.AsyncClient() as client:
         try:
             r = await client.post(WUZAPI_SEND_URL, json=payload, headers=headers)
-            print(f"<- RESPUESTA WUZAPI: {r.status_code} | {r.text}", flush=True)
+            print(f"<- RESPUESTA WUZAPI: {r.status_code} | DESTINO: {jid}", flush=True)
         except Exception as e:
             print(f"!! ERROR ENVIO A WUZAPI: {e}", flush=True)
+
+
+
+
 
 async def procesar_con_ia_y_responder(sender: str, message: str):
     print(f"-> Amelia pensando respuesta para: {message}...", flush=True)
